@@ -1,0 +1,228 @@
+---
+title: "NYPD Shooting Incident Data"
+author: "Iaroslav Grushetskyi"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### 1. Loading the packages.
+
+```{r, warning=FALSE}
+library(magrittr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+#### 2. Reading the Data.
+
+```{r}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd <- read.csv(url, header = TRUE, stringsAsFactors = FALSE)
+glimpse(nypd)
+```
+
+##### The data contains 28562 observations and 21 variables of different types. Missing and null values are also present.
+
+#### 3. Summary of the columns.
+
+##### Reading the basic statistics.
+
+```{r}
+summary(nypd)
+```
+
+##### The summary provides essential statistics of the variables, with particular focus on numeric variables. In our data set, most columns are of character type and do not contain significant statistical information.
+
+#### 4. Removing unnecessary columns.
+
+```{r}
+remove_columns <- c('LOC_OF_OCCUR_DESC', 
+                    'JURISDICTION_CODE', 
+                    'LOC_CLASSFCTN_DESC', 
+                    'X_COORD_CD', 
+                    'Y_COORD_CD', 
+                    'Latitude', 
+                    'Longitude')
+nypd <- nypd %>% select(-contains(remove_columns))
+glimpse(nypd)
+```
+
+##### Even though the columns above can be used for analysis, I have decided to remove them for this report.
+
+#### 5. Change date column to date type.
+
+```{r}
+nypd$OCCUR_DATE <- mdy(nypd$OCCUR_DATE)
+```
+
+#### 6. Structure of the columns.
+
+```{r}
+str(nypd)
+```
+
+##### The structure function tells us the type of the data values and size.
+
+#### 7. Missing values.
+
+##### Handling missing values in data is crucial. Depending on the type of data, various methods can be applied. In this data set, columns with missing values are of character or factor type. Removing these rows would discard other valuable information. Therefore, I have populated the missing, non-numeric values with "UNKNOWN".
+
+```{r}
+age_groups <- c("<18", "18-24", "25-44", "45-64", "65+")
+nypd$PERP_RACE[nypd$PERP_RACE == "" | nypd$PERP_RACE == "(null)"] <- "UNKNOWN"
+nypd$PERP_SEX[nypd$PERP_SEX == "" | nypd$PERP_SEX == "(null)" | nypd$PERP_SEX == "U"] <- "UNKNOWN"
+nypd$VIC_SEX[nypd$VIC_SEX == "" | nypd$VIC_SEX == "(null)" | nypd$VIC_SEX == "U"] <- "UNKNOWN"
+nypd$PERP_AGE_GROUP[!nypd$PERP_AGE_GROUP %in% age_groups] <- "UNKNOWN"
+nypd$VIC_AGE_GROUP[!nypd$VIC_AGE_GROUP %in% age_groups] <- "UNKNOWN"
+nypd$LOCATION_DESC[nypd$LOCATION_DESC == "" | nypd$LOCATION_DESC == "(null)" | nypd$LOCATION_DESC == "NONE"] <- "UNKNOWN"
+glimpse(nypd)
+```
+
+#### 8. Visualizing the Data.
+
+##### Shootings by Year
+
+```{r, warning=FALSE}
+shootings_by_year <- as.data.frame(table(nypd %>% select(OCCUR_DATE))) %>%
+  group_by(year = lubridate::year(OCCUR_DATE)) %>%
+  summarise(sum_of_shootings = sum(Freq))
+ggplot(shootings_by_year, aes(x = year, y = sum_of_shootings)) +
+  geom_col(fill = '#8FBC8B', color = 'black', alpha = 0.7) + 
+  labs(title = "Shootings by Year", x = "Year", y = "Number of Shootings") +
+  geom_text(aes(label = sum_of_shootings), position=position_dodge(width=0.9), vjust = -0.5, size = 3.5) +
+  theme_bw(base_size = 10) + theme_minimal(base_size = 13)
+```
+
+##### There is a steady distribution of shootings up until approximately 2013, followed by a decline through 2020. However, there is a noticeable spike in shootings immediately after the onset of COVID-19.
+
+##### Shootings by Borough.
+
+```{r}
+boro <- as.data.frame(table(nypd %>% select(BORO)))
+ggplot(data = boro, aes(x = BORO, y = Freq)) +
+  geom_bar(stat = "identity", fill = 'orange', color = 'black', width = 0.5, alpha = 0.7) + 
+  labs(title = "Shootings by Borough", x = "Borough", y = "Number of Shootings") +
+  geom_text(aes(label = Freq), position=position_dodge(width=0.9), vjust = -0.5, size = 3.5) +
+  theme_bw(base_size = 10) + theme_minimal(base_size = 13)
+```
+
+##### The majority of shootings occurred in Brooklyn, while Staten Island had the fewest incidents.
+
+##### Fatal Shootings.
+
+```{r}
+fatal_and_nonfatal <- as.data.frame(table(nypd %>% select(STATISTICAL_MURDER_FLAG)))
+ggplot(data = fatal_and_nonfatal, aes(x = STATISTICAL_MURDER_FLAG, y = Freq)) +
+  geom_bar(stat = "identity", fill = 'steelblue', color = 'black', width = 0.25, alpha = 0.7) + 
+  labs(title = "Fatal and Non-fatal Shootings ", x = "Shootings (false = non-fatal, true = fatal)", y = "Number of Shootings") +
+  geom_text(aes(label = Freq), position=position_dodge(width=0.9), vjust = -0.5, size = 3.5) +
+  theme_bw(base_size = 10) + theme_minimal(base_size = 13)
+```
+
+##### The majority of the shootings did not result in fatalities. However, slightly over 5,000 incidents were fatal and are classified as murders.
+
+##### Shootings by Perpetrator Age Group.
+
+```{r}
+perp_age_grp <- as.data.frame(table(nypd %>% select(PERP_AGE_GROUP)))
+ggplot(data = perp_age_grp, aes(x = PERP_AGE_GROUP, y = Freq)) +
+  geom_bar(stat = "identity", fill = '#4DAF4A', color = 'black', width = 0.5, alpha = 0.7) + 
+  labs(title = "Shootings by Perpetrator Age Group", x = "Age Group", y = "Number of Shootings") +
+  geom_text(aes(label = Freq), position=position_dodge(width=0.9), vjust = -0.5, size = 3.5) +
+  theme_bw(base_size = 10) + theme_minimal(base_size = 13)
+```
+
+##### The majority of shootings were committed by individuals aged 18-24 and 25-44. However, the "UNKNOWN" category contains a significant amount of data, which could impact the distribution across all age groups if properly identified.
+
+##### Fatal Outcomes in each Borough.
+
+```{r}
+deaths <- as.data.frame(table(nypd %>%
+  select(BORO, STATISTICAL_MURDER_FLAG, VIC_SEX)%>%
+  filter(STATISTICAL_MURDER_FLAG=="true")))
+ggplot(data = deaths, aes(x = BORO, y = Freq, fill = VIC_SEX)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.7) +
+  labs(title = "Victim Deaths by Sex in Each Borough", 
+         x = "Borough", y = "Number of Deaths", fill = "Victim Sex") + 
+  geom_text(aes(label = Freq), position=position_dodge(width=0.9), vjust = -0.5, size = 3.5) +
+  theme_bw(base_size = 9) + theme_minimal(base_size = 13)
+```
+
+##### The majority of fatal shootings occurred in Brooklyn, with male victims being predominant.
+
+##### Shootings by Perpetrator's Sex in each Borough.
+
+```{r}
+shoot_perp_sex <- as.data.frame(table(nypd %>%
+  select(BORO, PERP_SEX)))
+ggplot(data = shoot_perp_sex, aes(x = BORO, y = Freq, fill = PERP_SEX)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", alpha = 0.7) +
+  labs(title = "Shootings by Perpetrator Sex in Each Borough", 
+         x = "Borough", y = "Number of Shootings", fill = "Perpetrator Sex") + 
+  geom_text(aes(label = Freq), position=position_dodge(width=0.9), vjust = -0.5, size = 3) +
+  theme_bw(base_size = 10) + theme_minimal(base_size = 13)
+```
+
+##### Brooklyn continues to have the highest number of shootings involving male perpetrators, with the 'UNKNOWN' category showing a comparable amount of data. Additionally, there is a significant disparity between the number of male and female perpetrators.
+
+#### 9. Logistic Regression Model.
+
+##### In this section I use Logistic Regression model to predict an outcome of the shootings based on victim's age.
+
+```{r}
+shoot_outcome_vicsex <- data.frame(
+  age = as.factor(nypd$VIC_AGE_GROUP),
+  shoot_outcome = ifelse(nypd$STATISTICAL_MURDER_FLAG == "true", TRUE, FALSE)
+)
+```
+
+##### The Model.
+
+```{r}
+log_reg_model <- glm(formula = shoot_outcome ~ age, family = "binomial", data = shoot_outcome_vicsex)
+summary(log_reg_model)
+```
+
+##### In the output above, we first see the Call, which specifies the model and the options used. Next, the deviance residuals provide a measure of model fit by showing the distribution of residuals for the case(s) used in the model. The Coefficients section contains the most critical information. The Intercept is particularly important as it provides the baseline log-odds (probability) when all predictors are equal to zero. The results indicate that the victim's age is a significant predictor, with p-values demonstrating the statistical significance of the fatal outcome based on age. However, additional steps are recommended to verify the logistic regression model results, ensuring it is robust and well-specified.
+
+```{r}
+predict_model <- predict(log_reg_model, newdata = shoot_outcome_vicsex, type = "response")
+table(predict_model, nypd$VIC_AGE_GROUP)
+```
+
+##### Above is the prediction table with the probabilities of a fatal outcome for each age group, where the same data was used on itself.
+
+#### 10. Bias Identification.
+
+##### In this section I illustrate potential personal biases and methods to mitigate them. Identifying and understanding biases is an important step to ensure an objective and fair interpretation of the data. Here is some of the potential biases and mitigating methods:
+
+##### -Confirmation Bias: The tendency to search for, interpret, and remember information that confirms one's preconceptions.
+
+##### -Cultural Bias: Preferences or prejudices rooted in one’s cultural background can affect how data is interpreted.
+
+##### -Anchoring Bias: Over-reliance on the first piece of information encountered.
+
+##### -Implicit Bias: Unconscious attitudes or stereotypes that affect understanding, actions, and decisions.
+
+##### Some of the mitigating methods include, but not limited to, are:
+
+##### -Acknowledging and educating oneself about common biases and their effect on data.
+
+##### -Use of statistical techniques to check and adjust potential biases.
+
+##### -Use of standardized methods to reduce subjectivity.
+
+##### -Peer Review: Have the analysis reviewed by others who can provide an objective critique.
+
+##### -Reflective Practice: Regularly reflect on one’s own biases and how they might be influencing the analysis.
+
+#### Conclusive Remarks.
+
+##### Analyzing NYPD shootings data provided valuable hands-on experience with basic analytic methods in the R environment. I utilized libraries for data pre processing and manipulation, created visual presentations, and conducted basic statistical modeling. The Logistic Regression section offered an initial predictive overview of the data. However, for more accurate results, implementing more robust pre processing techniques is recommended. This report outlines the essential data analysis steps, emphasizing the importance of reproducibility.
