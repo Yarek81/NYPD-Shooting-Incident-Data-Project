@@ -1,0 +1,441 @@
+---
+title: "Project: Analyzing COVID-19 Data"
+author: "Iaroslav Grushetskyi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Project Objectives:
+
+-   Display the trend of confirmed cases and deaths over time for the U.S. and globally.
+-   Compare the number of confirmed cases and deaths across different countries and U.S. states.
+-   Perform an Analysis of Variance (ANOVA) on the average number of deaths between cold and warm months in the state of Ohio.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 1. Loading the libraries.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(scales)
+```
+
+### 2. Importing the files from Github repository.
+
+```{r}
+files <- c("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv", 
+           "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv",
+           "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv",
+           "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+```
+
+### 3. Reading the CSV files as data frames.
+
+```{r}
+confirmed_US <- as.data.frame(read.csv(files[1]), header = TRUE)
+confirmed_global <- as.data.frame(read.csv(files[2]), header = TRUE)
+deaths_US <- as.data.frame(read.csv(files[3]), header = TRUE)
+deaths_global <- as.data.frame(read.csv(files[4]), header = TRUE)
+```
+
+### 4. Tidying the data sets.
+
+#### In this section, I clean the data to make it easier to work with by removing unnecessary columns, renaming columns, pivoting the date columns into a single column with values, and converting the dates to a date type.
+
+```{r}
+#Confirmed global cases.
+#Dropping unnecessary columns, renaming and pivoting 
+conf_global_updated <- confirmed_global %>%
+  select(-c('Province.State', 'Lat', 'Long')) %>%
+  rename('Country' = 'Country.Region') %>%
+  pivot_longer(col = -'Country', names_to = 'Date', values_to = 'Cases')
+
+#The date column is in a strange integer format X.01.22.2020. Stripping unwanted characters and converting to date type.
+conf_global_updated$Date <- mdy(gsub("X", "", conf_global_updated$Date))
+str(conf_global_updated)
+```
+
+```{r}
+#Confirmed US cases.
+#Dropping unnecessary columns, renaming and pivoting 
+conf_US_updated <- confirmed_US %>%
+  select(-c('UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2', 
+            'Country_Region', 'Lat', 'Long_', 'Combined_Key')) %>%
+  rename('State/Territory' = 'Province_State') %>%
+  pivot_longer(col = -'State/Territory', names_to = 'Date', values_to = 'Cases')
+
+#The date column is in a strange integer format X.01.22.2020. Stripping unwanted characters and converting to date type.
+conf_US_updated$Date <- mdy(gsub("X", "", conf_US_updated$Date))
+str(conf_US_updated)
+```
+
+```{r}
+#Global deaths.
+deaths_global_updated <- deaths_global %>%
+  select(-c('Province.State', 'Lat', 'Long')) %>%
+  rename('Country' = 'Country.Region') %>%
+  pivot_longer(col = -'Country', names_to = 'Date', values_to = 'Cases')
+
+#The date column is in a strange integer format X.01.22.2020. Stripping unwanted characters and converting to date type.
+deaths_global_updated$Date <- mdy(gsub("X", "", deaths_global_updated$Date))
+str(deaths_global_updated)
+
+```
+
+```{r}
+#US deaths.
+suppressWarnings({deaths_US_updated <- deaths_US %>%
+  select(-c('UID', 'iso2', 'iso3', 'code3', 'FIPS', 'Admin2',
+            'Country_Region', 'Lat', 'Long_', 'Combined_Key')) %>%
+  rename('State/Territory' = 'Province_State') %>%
+  pivot_longer(col = -'State/Territory', names_to = 'Date', values_to = 'Cases')
+
+#The date column is in a strange integer format X.01.22.2020. Stripping unwanted characters and converting to date type.
+deaths_US_updated$Date <- mdy(gsub("X", "", deaths_US_updated$Date))
+str(deaths_US_updated)
+})
+```
+
+### 5. Trend Analysis.
+
+#### Global Trend Analysis: track the trend of confirmed cases and deaths globally over time.
+
+```{r fig.width=12, fig.height=6}
+options(scipen = 999)
+suppressMessages({monthly_cases_global <- conf_global_updated %>%
+  mutate(Year = year(Date),  Month = month(Date, label = TRUE, abbr = TRUE)) %>%
+  group_by(Year, Month) %>%
+  summarise(Total_cases = sum(Cases)) %>%
+  mutate(Cases_per_billion = as.numeric((Total_cases/8000000000)*1000000000))
+})
+```
+
+```{r fig.width=12, fig.height=6}
+suppressWarnings({
+  ggplot(monthly_cases_global, aes(x = Month, y = Cases_per_billion, color = factor(Year), group = Year)) + 
+    geom_line(size = 1, alpha = 2) + 
+    geom_point(size = 2) +
+    labs(title = "COVID-19 Global Cases Over Time", x = "Month", y = "Number of Cases (per billion)", color = "Year") +
+    scale_y_continuous(labels = comma) + 
+    theme_gray(base_size = 15)
+})
+
+```
+
+#### US Trend Analysis: similar to the global analysis but focused on the US.
+
+```{r}
+options(scipen = 999)
+suppressMessages({monthly_cases_US <- conf_US_updated %>%
+  mutate(Year = year(Date),
+         Month = month(Date, label = TRUE, abbr = TRUE)) %>%
+  group_by(Year, Month) %>%
+  summarise(Total_cases = sum(Cases)) %>%
+  mutate(Cases_per_million = as.numeric((Total_cases/330000000)*1000000))})
+```
+
+```{r fig.width=12, fig.height=6}
+ggplot(monthly_cases_US, aes(x = Month, y = Cases_per_million, color = factor(Year), group = Year)) +
+    geom_line(linewidth = 1, alpha = 2) + 
+    geom_point(size = 2) +
+    labs(title = "COVID-19 US Cases Over Time",
+         x = "Month",
+         y = "Number of Cases (per million)",
+         color = "Year") +
+    scale_y_continuous(labels = comma) +
+    theme_gray(base_size = 15)
+
+```
+
+#### The trend of U.S. and global cases and deaths increased from 2020 to 2023. A significant difference in numbers between 2020 and 2022 indicates the virus's spread and mutation. Notably, in 2023, there was a sharp decline in cases and deaths both in the U.S. and globally, likely due to intensive testing, self-quarantines, and mass vaccinations.
+
+### 6. Comparison Analysis.
+
+#### Country Comparison: compare the confirmed cases and deaths between the top 10 countries.
+
+```{r}
+#Global cases in each country in 2020
+global_cases_2020 <- conf_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2020) %>%
+  group_by(Country) %>%
+  summarise(Total_cases = sum(Cases)) %>%
+  arrange(desc(Total_cases)) %>%
+  ungroup()
+```
+
+```{r}
+#Global deaths in each country in 2020
+global_deaths_2020 <- deaths_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2020) %>%
+  group_by(Country) %>%
+  summarise(Total_deaths = sum(Cases)) %>%
+  arrange(desc(Total_deaths)) %>%
+  ungroup()
+
+```
+
+```{r}
+#Combined cases and deaths in 2020
+combined_cases_deaths_2020 <- merge(global_cases_2020, global_deaths_2020, by = "Country") %>%
+  arrange(desc(Total_cases))
+combined_cases_deaths_2020 <- pivot_longer(combined_cases_deaths_2020, 
+                                           cols = c(Total_cases, Total_deaths), 
+                                           names_to = "Cases_Deaths", values_to = "Count")
+```
+
+```{r fig.width=12, fig.height=6}
+#Bar plot of total cases and deaths in 2020 (top 10 countries)
+ggplot(combined_cases_deaths_2020[1:20, ], aes(x = Country, y = Count, fill = Cases_Deaths)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 2) +
+    labs(title = "Confirmed Cases and Deaths in 2020", 
+         subtitle = "Top 10 countries with the most cases and deaths", y = "Count", x = "") +
+    scale_y_continuous(labels = comma) +
+    theme_minimal(base_size = 15) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    scale_fill_discrete(name = "Cases/Deaths", labels = c("Total cases", "Total deaths"))
+```
+
+```{r}
+#Global cases of each country in 2021
+global_cases_2021 <- conf_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2021) %>%
+  group_by(Country) %>%
+  summarise(Total_cases = sum(Cases)) %>%
+  arrange(desc(Total_cases)) %>%
+  ungroup()
+```
+
+```{r}
+#Global deaths in each country in 2021
+global_deaths_2021 <- deaths_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2021) %>%
+  group_by(Country) %>%
+  summarise(Total_deaths = sum(Cases)) %>%
+  arrange(desc(Total_deaths)) %>%
+  ungroup()
+```
+
+```{r}
+#Combined cases and deaths in 2021
+combined_cases_deaths_2021 <- merge(global_cases_2021, global_deaths_2021, by = "Country") %>%
+  arrange(desc(Total_cases))
+combined_cases_deaths_2021 <- pivot_longer(combined_cases_deaths_2021, 
+                                           cols = c(Total_cases, Total_deaths), 
+                                           names_to = "Cases_Deaths", values_to = "Count")
+```
+
+```{r fig.width=12, fig.height=6}
+#Bar plot of total cases and deaths in 2021 (top 10 countries)
+ggplot(combined_cases_deaths_2021[1:20, ], aes(x = Country, y = Count, fill = Cases_Deaths)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 2) +
+    labs(title = "Confirmed Cases and Deaths in 2021", 
+         subtitle = "Top 10 countries with the most cases and deaths", y = "Count", x = "") +
+    scale_y_continuous(labels = comma) +
+    theme_minimal(base_size = 15) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    scale_fill_discrete(name = "Cases/Deaths", labels = c("Total cases", "Total deaths"))
+```
+
+```{r}
+#Global cases of each country in 2022
+global_cases_2022 <- conf_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2022) %>%
+  group_by(Country) %>%
+  summarise(Total_cases = sum(Cases)) %>%
+  arrange(desc(Total_cases)) %>%
+  ungroup()
+```
+
+```{r}
+#Global deaths in each country in 2022
+global_deaths_2022 <- deaths_global_updated %>%
+  select(Country, Date, Cases) %>%
+  filter(year(Date) == 2022) %>%
+  group_by(Country) %>%
+  summarise(Total_deaths = sum(Cases)) %>%
+  arrange(desc(Total_deaths)) %>%
+  ungroup()
+```
+
+```{r}
+#Combined cases and deaths in 2022.
+combined_cases_deaths_2022 <- merge(global_cases_2022, global_deaths_2022, by = "Country") %>%
+  arrange(desc(Total_cases))
+combined_cases_deaths_2022 <- pivot_longer(combined_cases_deaths_2022, 
+                                           cols = c(Total_cases, Total_deaths), 
+                                           names_to = "Cases_Deaths", values_to = "Count")
+```
+
+```{r fig.width=12, fig.height=6}
+#Bar plot of total cases and deaths in 2022 (top 10 countries)
+ggplot(combined_cases_deaths_2022[1:20, ], aes(x = Country, y = Count, fill = Cases_Deaths)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 2) +
+    labs(title = "Confirmed Cases and Deaths in 2022", 
+         subtitle = "Top 10 countries with the most cases and deaths", y = "Count", x = "") +
+    scale_y_continuous(labels = comma) +
+    theme_minimal(base_size = 15) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    scale_fill_discrete(name = "Cases/Deaths", labels = c("Total cases", "Total deaths"))
+```
+
+#### State Comparison: compare confirmed cases and deaths between the top 10 states in the US.
+
+```{r}
+#Removing NA values in a Date column in Deaths US data set.
+deaths_US_updated_notNA <- deaths_US_updated[!is.na(deaths_US_updated$Date), ]
+
+#Removing values that are not considered state or territory.
+deaths_US_updated_notNA <- deaths_US_updated_notNA[!deaths_US_updated_notNA$`State/Territory` %in%  c("Diamond Princess", "Grand Princess"), ]
+conf_US_updated <- conf_US_updated[!conf_US_updated$`State/Territory` %in% c("Diamond Princess", "Grand Princess"), ]
+```
+
+```{r}
+# Selecting State and Cases. Grouping by State and summing the death values.
+total_deaths_US <- deaths_US_updated_notNA %>%
+  select(`State/Territory`, Cases) %>%
+  group_by(`State/Territory`) %>%
+  summarise(Total_Deaths = sum(Cases)) %>%
+  arrange(desc(Total_Deaths))
+```
+
+```{r}
+# Selecting State and Cases. Grouping by State and summing the confirmed cases values.
+total_cases_US <- conf_US_updated %>%
+  select(`State/Territory`, Cases) %>%
+  group_by(`State/Territory`) %>%
+  summarise(Total_Cases = sum(Cases)) %>%
+  arrange(desc(Total_Cases))
+```
+
+```{r}
+#Combining the US deaths and confirmed cases data sets.
+combined_cases_deaths_US <- merge(total_cases_US, total_deaths_US, by = "State/Territory") %>%
+  arrange(desc(Total_Cases))
+
+#Pivoting the deaths and cases columns.
+combined_cases_deaths_US <- pivot_longer(combined_cases_deaths_US, 
+                                           cols = c(Total_Cases, Total_Deaths), 
+                                           names_to = "Cases_Deaths", values_to = "Count")
+
+```
+
+```{r fig.width=12, fig.height=6}
+ggplot(combined_cases_deaths_US[1:20, ], aes(x = `State/Territory`, y = Count, fill = Cases_Deaths)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 2) +
+  coord_flip() + 
+  labs(title = "Confirmed Cases and Deaths by State", 
+       subtitle = "Top 10 states with the most cases and deaths", x = "Country", y = "") +
+  scale_fill_discrete(name = "Cases/Deaths", labels = c("Total cases", "Total deaths")) +
+  theme_minimal(base_size = 15)
+```
+
+#### There may be several factors contributing to the significant difference between cases and deaths globally and in the US.
+
+#### Public Health Measures - the timing and strictness of lock downs, mask mandates, social distancing, and other public health interventions varied widely between countries and regions, influencing infection rates.
+
+#### Healthcare Capacity - the availability of healthcare resources, including hospital beds, ventilators, and trained medical staff, affected the ability to manage severe cases and reduce mortality.
+
+#### Vaccination Rates - the roll out and coverage of vaccines played a critical role in reducing both cases and deaths. Higher vaccination rates generally led to lower mortality and infection rates.
+
+#### Population Behavior - public compliance with health guidelines, willingness to get vaccinated, and levels of mobility influenced the spread of the virus.
+
+### 7. One-Way ANOVA Test.
+
+#### In this section, I conduct a one-way ANOVA test using U.S. COVID-19 deaths data, focusing on Ohio, my state of residence. The goal is to determine if there is a significant difference in the average number of deaths between cold and warm months from 2020 to 2022.
+
+```{r}
+#Filtering data without NA values by state OH. Adding new columns with month and season (cold/warm). Removing rows of year 2023 since it does not cover all 12 months.
+cold_months <- c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar")
+deaths_OH_notNA <- deaths_US_updated_notNA %>%
+  mutate(Month = month(Date, label = TRUE), Season = ifelse(Month %in% cold_months, "cold", "warm")) %>%
+  filter(`State/Territory` == "Ohio" & year(Date) != 2023)
+str(deaths_OH_notNA)
+```
+
+```{r}
+#Calculating the mean deaths of cold and warm months in Ohio.
+aggregate(deaths_OH_notNA$Cases ~ deaths_OH_notNA$Season, data = deaths_OH_notNA, FUN = mean)
+```
+
+#### In the table above, we see the average death values during cold and warm months in the state of Ohio. While there is a difference, is it significant enough to indicate a spike in deaths during the cold months?
+
+```{r fig.width=12, fig.height=6}
+#Distribution of deaths in Ohio during cold and warm months.
+ggplot(deaths_OH_notNA, aes(x = Cases, fill = Season)) +
+  geom_density(alpha = 2) +  
+  labs(title = "Density Plot of Deaths During Cold and Warm Months in Ohio",
+       x = "Deaths",
+       y = "Density") +
+  theme_minimal(base_size = 15) 
+
+```
+
+#### The density plot suggests that most observations (deaths) during both cold and warm months cluster within 0 and 1,000. This means that the typical number of deaths recorded during these periods tends to be low to moderate, rather than extremely high. We do observe a 'trail' of high death observations crossing marker 4000.
+
+```{r}
+summary(aov(Cases ~ Season, data = deaths_OH_notNA))
+```
+
+#### Interpreting the ANOVA test output, we observe a significant difference in all metrics, particularly the F statistic and the p-value. The extremely low p-value indicates a significant difference in mean deaths between cold and warm months. However, this result may be influenced by the long 'tail' of outliers, as shown in the density plot above.
+
+### 8. Bias Interpretation.
+
+#### Reporting Bias.
+
+#### Under reporting or over reporting: different countries and regions may have varying levels of testing, healthcare infrastructure, and reporting practices. Some areas might under report cases and deaths due to limited testing or political pressure, while others might over report or miss-classify deaths.
+
+#### Selection Bias.
+
+#### Population demographics: the demographics of populations (e.g., age, socioeconomic status, underlying health conditions) differ across regions, affecting the severity and spread of COVID-19. Comparing regions without accounting for these differences can lead to biased conclusions.
+
+#### Sampling: if the data is primarily from regions with better healthcare systems and more resources, it might not accurately represent areas with less robust systems.
+
+#### Confounding Bias.
+
+#### Intervention differences: variability in public health interventions (e.g., lock downs, mask mandates, vaccination rates) across regions can confound the analysis if not properly controlled for.
+
+#### Healthcare capacity: differences in healthcare capacity, such as ICU beds and ventilators, can affect outcomes and introduce bias if not accounted for.
+
+#### Cultural and Behavioral Bias.
+
+#### Behavioral responses: cultural attitudes towards public health measures, trust in government, and social behavior can vary widely across regions, affecting the spread and impact of COVID-19.
+
+#### Vaccine hesitancy: differences in vaccine acceptance and roll out can introduce bias when comparing regions with different vaccination rates.
+
+#### Geographic Bias.
+
+#### Urban vs. rural differences: the spread of COVID-19 and healthcare access can differ significantly between urban and rural areas. Analyzing data without accounting for these differences can lead to misleading conclusions.
+
+#### Publication Bias.
+
+#### Focus on high-impact data: there might be a tendency to focus on data from regions with significant outbreaks or unusual outcomes, while data from regions with less dramatic numbers might be under reported or ignored.
+
+#### Measurement Bias.
+
+#### Inconsistent testing: differences in the availability and accuracy of COVID-19 tests can lead to measurement bias, affecting case counts and positive rates.
+
+#### Data quality and integrity: errors in data entry, coding, or management can introduce biases, particularly if data quality varies across regions.
+
+#### Mitigation Strategies.
+
+#### Standardization: use standardized definitions and methods for collecting and analyzing data where possible.
+
+#### Stratification: analyze data by relevant subgroups (e.g., age, geographic region, socioeconomic status) to reduce confounding.
+
+#### Sensitivity analysis: conduct sensitivity analyses to assess how robust your results are to different assumptions and potential biases.
+
+#### Cross-validation: compare findings with data from multiple sources or regions to validate results and check for consistency.
+
+#### Final remarks.
+
+#### Analyzing COVID-19 data provided valuable hands-on experience with basic analytic methods in the R environment. I utilized libraries for data pre-processing, manipulation, visualization, and conducted basic statistical tests. The ANOVA test highlighted differences across categories, though more accurate results would benefit from robust pre-processing techniques to address bias. This report outlines essential data analysis steps, emphasizing the importance of reproducibility.
